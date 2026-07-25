@@ -136,14 +136,17 @@ Planner ──→ Generator ──→ Evaluator
 `balanced`です。GeneratorとEvaluatorは、同じAgentを再利用できる場合でも互いに別Agent、またはroleごとの
 独立作業単位として分離します。
 
-Codexのrole既定は次のとおりです。
+Codexの配布時既定は、Claude Codeと同じく全roleでhost設定を継承します。
 
 | role | model | effort |
 |---|---|---|
-| Planner | `gpt-5.6-sol` | `high` |
-| Generator（standard） | `gpt-5.6-luna` | `xhigh` |
-| Generator（strong） | `gpt-5.6-sol` | `high` |
-| Evaluator | `gpt-5.6-sol` | `high` |
+| Planner | `inherit` | `inherit` |
+| Generator（standard） | `inherit` | `inherit` |
+| Generator（strong） | `inherit` | `inherit` |
+| Evaluator | `inherit` | `inherit` |
+
+Sol / Lunaなどを共有設定、個人設定、またはユーザー指定で明示した場合は、以下のrouting機能を引き続き利用できます。
+後述の検証例で使う正式IDは `gpt-5.6-luna` / `gpt-5.6-sol` です。
 
 ### Codex実行面の確認状況（2026-07-20）
 
@@ -170,9 +173,9 @@ runtime parserが受理する場合があります。表示に欄が無いこと
 任意の正式なmodel / effortを名前変更せずdispatchし、child metadataと一致した場合だけ`launch-verified`にします。
 
 `dispatch-attempt`が`Unknown model`などの同期的な入力検証で子Agent作成前に拒否された場合だけ、正確な拒否値を
-resolverへ返して再解決します。通常GeneratorのLunaが拒否されるとfreshなSol/highへfallbackし、Solも拒否されると
-`inherit`へ戻ります。高リスクSprint、2回目の連続失敗、証拠付きEvaluator推薦では最初からSol/highを選ぶため、
-Lunaを試しません。Terraと`codex exec`は自動fallbackに使いません。
+resolverへ返して再解決します。standardにLuna、strongにSolを明示している場合、Lunaが拒否されるとfreshな
+Sol/highへfallbackし、Solも拒否されると`inherit`へ戻ります。高リスクSprint、2回目の連続失敗、
+証拠付きEvaluator推薦では明示されたstrong設定を選びます。Terraと`codex exec`は自動fallbackに使いません。
 
 Codex Appで完了済みAgentへfollow-upした検証では、指定値がSol/lowへ変わったため、model / effortを保つresumeは
 未対応として扱います。CLIを含め、resume後も同じroutingがhost metadataで確認できるまでは、指定値が必要な
@@ -195,9 +198,10 @@ OrchestratorはHarnessを動かす本チャットであり、pluginがspawnす�
 
 Claude Code / Codexごとの `planner` / `generator` / `evaluator` に `model` と `effort` を設定できます。
 個人差分はgit管理外の `.harness/config.local.toml` に必要な項目だけ書き、共有設定の他項目を保持します。
-Claude Codeの既定は全roleで`inherit`です。Codex名からClaude Codeのmodel名を推定・変換しません。
-無効・利用不能・host未対応の値は、その項目だけ警告付きで `inherit` へ戻ります。通常GeneratorのLunaが
-利用不能と確認できた場合はSol/highを試し、Solも利用不能ならmodel / effortを`inherit`へ戻します。
+Claude CodeとCodexの配布時既定は、どちらも全roleで`inherit`です。Codex名からClaude Codeのmodel名を
+推定・変換しません。無効・利用不能・host未対応の値は、その項目だけ警告付きで `inherit` へ戻ります。
+standardにLuna、strongにSolを明示した構成でLunaが利用不能と確認できた場合はSol/highを試し、
+Solも利用不能ならmodel / effortを`inherit`へ戻します。
 Harness自身はTerraを通常・昇格・利用不能fallbackのどこでも自動選択しません。
 AIエージェントへmodel / effortの変更を依頼した場合は、共有TOMLに記載した該当hostの公式URLを
 その時点で実際に確認し、正式なmodel ID / alias / effortをそのまま使います。確認できない値は

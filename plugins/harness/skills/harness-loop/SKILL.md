@@ -252,7 +252,7 @@ node "$PLUGIN_ROOT/scripts/resolve-runtime-config.mjs" --root "$(pwd)" --host co
   resolverが明示値を返した場合は、正確な`model` / `reasoning_effort`を付けて実roleを1回だけ
   `dispatch-attempt`する。custom agentを選ぶときの入力名は`agent_type`であり、`agent_role`は渡さない。
   `agent_role`は起動後のchild metadataで確認する値である。
-- この契約は既定のLuna / Solだけに限定しない。共有config、個人config、またはユーザーが明示した任意の
+- この契約は明示設定のLuna / Solだけに限定しない。共有config、個人config、またはユーザーが明示した任意の
   正式なmodel / effortについて、resolverの`effective`値を推測・別名変換せずそのままdispatchする。
   起動後はchildのhost metadataで指定値との一致を確認し、一致した場合だけ`launch-verified`とする。
 - `model`または`reasoning_effort`自体が`unknown field`として子作成前に拒否された場合は、model値の

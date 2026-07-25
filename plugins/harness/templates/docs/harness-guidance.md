@@ -54,7 +54,7 @@ For substantial app, site, tool, or multi-step feature work, use Agentic Harness
   application path from capabilities. Never classify implementation failure as launch rejection, and never auto-fallback
   to Terra or `codex exec`.
 - Apply this exact-value dispatch contract to every model/effort selected by shared config, personal config, or the user;
-  it is not limited to the bundled Luna/Sol defaults. Never rename or guess a requested model. Mark `launch-verified` only
+  it is not limited to explicit Luna/Sol settings. Never rename or guess a requested model. Mark `launch-verified` only
   after child host metadata matches the dispatched values.
 - For Codex, use the strong Generator tier for a high-risk Sprint, the second consecutive implementation failure, or an
   evidence-verified Evaluator recommendation. Compare it with the last dispatched tier retained in state; record the new

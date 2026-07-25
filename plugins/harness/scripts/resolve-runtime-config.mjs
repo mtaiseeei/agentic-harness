@@ -30,23 +30,17 @@ export const DEFAULT_CONFIG = Object.freeze({
       host,
       {
         roles: Object.fromEntries(ROLES.map((role) => {
-          if (host === "codex" && role === "planner") {
-            return [role, { model: "gpt-5.6-sol", effort: "high" }];
-          }
           if (host === "codex" && role === "generator") {
             return [role, {
-              model: "gpt-5.6-luna",
-              effort: "xhigh",
+              model: "inherit",
+              effort: "inherit",
               escalation: {
-                model: "gpt-5.6-sol",
-                effort: "high",
+                model: "inherit",
+                effort: "inherit",
                 after_failures: 2,
                 on_evaluator_recommendation: true,
               },
             }];
-          }
-          if (host === "codex" && role === "evaluator") {
-            return [role, { model: "gpt-5.6-sol", effort: "high" }];
           }
           return [role, { model: "inherit", effort: "inherit" }];
         })),

@@ -156,6 +156,19 @@ function codexUnknownAvailabilityCapabilities() {
   };
 }
 
+function writeExplicitCodexRoutingConfig(root) {
+  const config = parseToml(
+    fs.readFileSync(path.join(pluginRoot, "templates/.harness/config.toml"), "utf8"),
+  );
+  config.hosts.codex.roles.planner = { model: "gpt-5.6-sol", effort: "high" };
+  config.hosts.codex.roles.generator.model = "gpt-5.6-luna";
+  config.hosts.codex.roles.generator.effort = "xhigh";
+  config.hosts.codex.roles.generator.escalation.model = "gpt-5.6-sol";
+  config.hosts.codex.roles.generator.escalation.effort = "high";
+  config.hosts.codex.roles.evaluator = { model: "gpt-5.6-sol", effort: "high" };
+  writeToml(path.join(root, ".harness/config.toml"), config);
+}
+
 const checks = [];
 function check(name, run) {
   checks.push({ name, run });
@@ -169,7 +182,7 @@ check("shared TOML separates settings from reference and requires exact official
   const firstValueIndex = source.indexOf("version = 1");
   const referenceIndex = source.indexOf("# REFERENCE / 設定方法・動作説明");
   const evaluatorIndex = source.indexOf("[hosts.codex.roles.evaluator]");
-  const lastValueIndex = source.indexOf('effort = "high"', evaluatorIndex);
+  const lastValueIndex = source.indexOf('effort = "inherit"', evaluatorIndex);
   assert.ok(settingsIndex >= 0 && settingsIndex < firstValueIndex);
   assert.ok(referenceIndex > lastValueIndex);
   assert.ok(!source.includes("通常、編集するのはこのセクションだけです。"));
@@ -183,7 +196,7 @@ check("shared TOML separates settings from reference and requires exact official
   assert.match(source, /"balanced" reuses a role only when host metadata verifies model\/effort-preserving resume/i);
   assert.match(source, /"fresh" starts new Generator and Evaluator work units/i);
   assert.match(source, /(?:Orchestrator|オーケストレーター).*(?:cannot|does not|not|変更できない).*model/i);
-  assert.match(source, /Luna.*Sol.*inherit/is);
+  assert.match(source, /distributed Codex role leaves inherit by default/i);
   assert.match(source, /Terra.*(?:never|not|do not|自動選択しません)/i);
   assert.match(source, /displayed.*schema.*omit.*runtime parser.*accept/is);
   assert.match(source, /agent_type.*never agent_role/is);
@@ -196,20 +209,20 @@ check("shared TOML separates settings from reference and requires exact official
   assert.match(source, /# JA:.*Evaluator/is);
   assert.equal(config.lifecycle, "balanced");
   assert.deepEqual(config.hosts.codex.roles.planner, {
-    model: "gpt-5.6-sol",
-    effort: "high",
+    model: "inherit",
+    effort: "inherit",
   });
-  assert.equal(config.hosts.codex.roles.generator.model, "gpt-5.6-luna");
-  assert.equal(config.hosts.codex.roles.generator.effort, "xhigh");
+  assert.equal(config.hosts.codex.roles.generator.model, "inherit");
+  assert.equal(config.hosts.codex.roles.generator.effort, "inherit");
   assert.deepEqual(config.hosts.codex.roles.generator.escalation, {
-    model: "gpt-5.6-sol",
-    effort: "high",
+    model: "inherit",
+    effort: "inherit",
     after_failures: 2,
     on_evaluator_recommendation: true,
   });
   assert.deepEqual(config.hosts.codex.roles.evaluator, {
-    model: "gpt-5.6-sol",
-    effort: "high",
+    model: "inherit",
+    effort: "inherit",
   });
   assert.equal((source.match(/https:\/\//g) || []).length, 7);
   assert.equal(JSON.stringify(config).includes("https://"), false);
@@ -220,19 +233,19 @@ check("shared TOML separates settings from reference and requires exact official
   assert.equal(resolved.configFiles.format, "toml");
   assert.equal(resolved.lifecycle.mode, "balanced");
   assert.equal(resolved.hosts.claudeCode.roles.planner.model.effective, "inherit");
-  assert.equal(resolved.hosts.codex.roles.planner.model.requested, "gpt-5.6-sol");
-  assert.equal(resolved.hosts.codex.roles.generator.model.requested, "gpt-5.6-luna");
-  assert.equal(resolved.hosts.codex.roles.evaluator.model.requested, "gpt-5.6-sol");
+  assert.equal(resolved.hosts.codex.roles.planner.model.requested, "inherit");
+  assert.equal(resolved.hosts.codex.roles.generator.model.requested, "inherit");
+  assert.equal(resolved.hosts.codex.roles.evaluator.model.requested, "inherit");
 });
 
 check("generated guidance preserves hidden-schema exact dispatch rules", () => {
   for (const relative of ["templates/AGENTS.md", "templates/CLAUDE.md"]) {
     const source = fs.readFileSync(path.join(pluginRoot, relative), "utf8");
     assert.match(source, /displayed spawn schema.*runtime parser accepts/is);
-    assert.match(source, /schema omission alone must not force `inherit`/i);
+    assert.match(source, /schema omission alone must not force an explicitly configured value back to `inherit`/i);
     assert.match(source, /resolver's exact `dispatch-attempt` values/i);
     assert.match(source, /`agent_type`, never `agent_role`/i);
-    assert.match(source, /every exact model\/effort.*not only Luna\/Sol/is);
+    assert.match(source, /every exact model\/effort.*including explicit Luna\/Sol settings/is);
     assert.match(source, /`unknown field` rejection.*application path is unavailable/is);
     assert.match(source, /child host metadata matches the dispatched values/is);
   }
@@ -240,11 +253,7 @@ check("generated guidance preserves hidden-schema exact dispatch rules", () => {
 
 check("recorded Codex CLI and App capability snapshots resolve without claiming launch verification", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
 
   const cli = resolveRuntimeConfig({ root, host: "codex", capabilityOverrides: codexCliCapabilities() });
   assert.equal(cli.hosts.codex.roles.planner.model.effective, "gpt-5.6-sol");
@@ -293,11 +302,7 @@ check("recorded Codex CLI and App capability snapshots resolve without claiming 
 
 check("Codex probes the configured role values when spawn arguments exist but App versus CLI availability is unknown", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
 
   const result = resolveRuntimeConfig({
     root,
@@ -359,8 +364,10 @@ check("Codex dispatch-attempt preserves arbitrary configured model and effort va
 });
 
 check("pre-launch rejection handling applies to every Codex role without changing the Generator tier rules", () => {
+  const root = fixture();
+  writeExplicitCodexRoutingConfig(root);
   const result = resolveRuntimeConfig({
-    root: fixture(),
+    root,
     host: "codex",
     currentModelTier: "standard",
     capabilityOverrides: codexUnknownAvailabilityCapabilities(),
@@ -381,11 +388,7 @@ check("pre-launch rejection handling applies to every Codex role without changin
 
 check("a pre-launch Luna rejection reroutes the actual Generator to fresh Sol without trying Terra", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
 
   const result = resolveRuntimeConfig({
     root,
@@ -407,8 +410,10 @@ check("a pre-launch Luna rejection reroutes the actual Generator to fresh Sol wi
 });
 
 check("high-risk routing starts with Sol even when Luna was rejected on the active Codex surface", () => {
+  const root = fixture();
+  writeExplicitCodexRoutingConfig(root);
   const result = resolveRuntimeConfig({
-    root: fixture(),
+    root,
     host: "codex",
     sprintRisk: "high",
     currentModelTier: "standard",
@@ -423,8 +428,10 @@ check("high-risk routing starts with Sol even when Luna was rejected on the acti
 });
 
 check("if both configured Codex Generator models are rejected before launch, routing inherits and never selects Terra", () => {
+  const root = fixture();
+  writeExplicitCodexRoutingConfig(root);
   const result = resolveRuntimeConfig({
-    root: fixture(),
+    root,
     host: "codex",
     currentModelTier: "standard",
     capabilityOverrides: codexUnknownAvailabilityCapabilities(),
@@ -440,36 +447,31 @@ check("if both configured Codex Generator models are rejected before launch, rou
   ));
 });
 
-check("Codex defaults resolve by role while Claude Code stays inherited", () => {
+check("distributed defaults inherit model and effort for both hosts", () => {
   const root = fixture();
   fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
   fs.copyFileSync(
     path.join(pluginRoot, "templates/.harness/config.toml"),
     path.join(root, ".harness/config.toml"),
   );
-  const result = resolveRuntimeConfig({ root, capabilityOverrides: completeCapabilities() });
-  const codex = result.hosts.codex.roles;
-  assert.equal(codex.planner.model.effective, "gpt-5.6-sol");
-  assert.equal(codex.planner.effort.effective, "high");
-  assert.equal(codex.generator.model.effective, "gpt-5.6-luna");
-  assert.equal(codex.generator.effort.effective, "xhigh");
-  assert.equal(codex.generator.routing.modelTier, "standard");
-  assert.equal(codex.evaluator.model.effective, "gpt-5.6-sol");
-  assert.equal(codex.evaluator.effort.effective, "high");
-
-  for (const role of ["planner", "generator", "evaluator"]) {
-    assert.equal(result.hosts.claudeCode.roles[role].model.effective, "inherit");
-    assert.equal(result.hosts.claudeCode.roles[role].effort.effective, "inherit");
+  const results = [
+    resolveRuntimeConfig({ root, capabilityOverrides: completeCapabilities() }),
+    resolveRuntimeConfig({ root: fixture(), capabilityOverrides: completeCapabilities() }),
+  ];
+  for (const result of results) {
+    for (const host of ["claudeCode", "codex"]) {
+      for (const role of ["planner", "generator", "evaluator"]) {
+        assert.equal(result.hosts[host].roles[role].model.effective, "inherit");
+        assert.equal(result.hosts[host].roles[role].effort.effective, "inherit");
+      }
+    }
+    assert.equal(result.hosts.codex.roles.generator.routing.modelTier, "standard");
   }
 });
 
 check("Generator stays standard through retry one and escalates fresh on retry two", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const capabilities = completeCapabilities();
 
   for (const retryCount of [0, 1]) {
@@ -537,11 +539,7 @@ check("Generator stays standard through retry one and escalates fresh on retry t
 
 check("verified Evaluator recommendation and high-risk Sprint select a fresh strong Generator", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const capabilities = completeCapabilities();
   const cases = [
     {
@@ -604,11 +602,7 @@ check("verified Evaluator recommendation and high-risk Sprint select a fresh str
 
 check("spec issues route to Planner and the third implementation failure stops for the user", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const capabilities = completeCapabilities();
 
   const specIssue = resolveRuntimeConfig({
@@ -710,11 +704,7 @@ check("personal escalation leaves merge without erasing shared strong model and 
 
 check("standard Luna unavailability falls back to Sol then inherit, never Terra", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
 
   const solOnly = completeCapabilities();
   solOnly.codex.models = ["gpt-5.6-terra", "gpt-5.6-sol"];
@@ -822,11 +812,7 @@ check("invalid escalation types, thresholds, and unknown keys diagnose safely", 
 
 check("routing decisions do not mutate Sprint state or Evaluator feedback fixtures", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const state = path.join(root, "docs/sprints/state.md");
   const feedback = path.join(root, "docs/feedback/sprint-001.md");
   fs.mkdirSync(path.dirname(state), { recursive: true });
@@ -869,11 +855,7 @@ check("routing decisions do not mutate Sprint state or Evaluator feedback fixtur
 
 check("v0.3 state without model routing fields migrates from unknown through a fresh dispatch", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const state = path.join(root, "docs/sprints/state.md");
   fs.mkdirSync(path.dirname(state), { recursive: true });
   fs.writeFileSync(state, [
@@ -924,11 +906,7 @@ check("v0.3 state without model routing fields migrates from unknown through a f
 
 check("pass transition retains the last dispatched tier until the next Sprint routing decision", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const state = path.join(root, "docs/sprints/state.md");
   fs.mkdirSync(path.dirname(state), { recursive: true });
   fs.writeFileSync(state, [
@@ -1007,6 +985,7 @@ check("orchestration contract records model tier before fresh dispatch and keeps
 
 check("launch rejection CLI input is explicit, repeatable, and requires one selected host", () => {
   const root = fixture();
+  writeExplicitCodexRoutingConfig(root);
   const capabilities = path.join(root, "capabilities.json");
   writeJson(capabilities, codexUnknownAvailabilityCapabilities());
   const rejected = runCli([
@@ -1235,11 +1214,7 @@ check("capability CLI accepts a file and degrades broken files without stopping"
 
 check("routing CLI accepts retry, recommendation evidence, and Sprint risk inputs", () => {
   const root = fixture();
-  fs.mkdirSync(path.join(root, ".harness"), { recursive: true });
-  fs.copyFileSync(
-    path.join(pluginRoot, "templates/.harness/config.toml"),
-    path.join(root, ".harness/config.toml"),
-  );
+  writeExplicitCodexRoutingConfig(root);
   const capabilityFile = path.join(root, "capabilities.json");
   writeJson(capabilityFile, { hosts: completeCapabilities() });
 
@@ -1597,9 +1572,9 @@ check("legacy JSON is compatible alone, ignored beside TOML, and never leaf-merg
   const coexist = resolveRuntimeConfig({ root: coexistRoot, capabilityOverrides: completeCapabilities() });
   assert.equal(coexist.configFiles.format, "toml");
   assert.equal(coexist.lifecycle.mode, "balanced");
-  assert.equal(coexist.hosts.codex.roles.planner.model.effective, "gpt-5.6-sol");
+  assert.equal(coexist.hosts.codex.roles.planner.model.effective, "inherit");
   assert.equal(coexist.hosts.codex.roles.planner.model.source, "plugin");
-  assert.equal(coexist.hosts.codex.roles.planner.effort.effective, "high");
+  assert.equal(coexist.hosts.codex.roles.planner.effort.effective, "inherit");
   assert.equal(coexist.hosts.codex.roles.planner.effort.source, "plugin");
   assert.equal(coexist.warnings.filter((item) => item.code === "legacy-json-ignored").length, 2);
 });
