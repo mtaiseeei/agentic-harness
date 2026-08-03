@@ -16,6 +16,7 @@ const { parse: parseToml, stringify: stringifyToml } = require("../vendor/smol-t
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(scriptDir, "..");
 const resolver = path.join(scriptDir, "resolve-runtime-config.mjs");
+const codexAgentProvisioner = path.join(scriptDir, "provision-codex-agent.mjs");
 const initializer = path.join(pluginRoot, "scripts/init-guidance.sh");
 const harnessCommand = path.join(pluginRoot, "scripts/harness.mjs");
 const fixtureRoots = new Set();
@@ -70,6 +71,29 @@ function runCli(args) {
   return spawnSync(process.execPath, [resolver, ...args], { encoding: "utf8" });
 }
 
+function runCodexAgentProvisioner(args) {
+  return spawnSync(process.execPath, [codexAgentProvisioner, ...args], { encoding: "utf8" });
+}
+
+const canonicalCodexLunaAgent = `name = "harness_luna_worker"
+description = "Luna worker for a narrowly scoped Harness role task."
+model = "gpt-5.6-luna"
+developer_instructions = """
+Handle only the task assigned by the parent agent.
+Follow the role, scope, file ownership, and output contract supplied in that task.
+Do not make unrelated changes.
+Verify the result when practical.
+Return a concise result with evidence, relevant paths, and caveats.
+"""
+`;
+
+function writeCompatibleCodexLunaAgent(codexHome) {
+  const target = path.join(codexHome, "agents/harness-luna-worker.toml");
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, canonicalCodexLunaAgent);
+  return target;
+}
+
 function completeCapabilities() {
   return {
     claudeCode: {
@@ -113,7 +137,7 @@ function codexCliCapabilities() {
       roleModel: true,
       roleEffort: true,
       models: ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"],
-      efforts: ["high", "xhigh"],
+      efforts: ["medium", "high", "xhigh"],
       applicationPaths: {
         roleModel: "Codex CLI native spawn_agent model argument",
         roleEffort: "Codex CLI native spawn_agent reasoning_effort argument",
@@ -130,7 +154,7 @@ function codexAppCapabilities() {
       roleModel: true,
       roleEffort: true,
       models: ["gpt-5.6-sol", "gpt-5.6-terra"],
-      efforts: ["high", "xhigh"],
+      efforts: ["medium", "high", "xhigh"],
       applicationPaths: {
         roleModel: "Codex App native spawn_agent model argument",
         roleEffort: "Codex App native spawn_agent reasoning_effort argument",
@@ -236,6 +260,308 @@ check("shared TOML separates settings from reference and requires exact official
   assert.equal(resolved.hosts.codex.roles.planner.model.requested, "inherit");
   assert.equal(resolved.hosts.codex.roles.generator.model.requested, "inherit");
   assert.equal(resolved.hosts.codex.roles.evaluator.model.requested, "inherit");
+});
+
+check("Codex custom-agent switch defaults false and personal leaf override preserves shared roles", () => {
+  const bare = fixture();
+  const bareCodexHome = path.join(fixture(), "missing-codex-home");
+  const defaults = resolveRuntimeConfig({
+    root: bare,
+    host: "codex",
+    codexHome: bareCodexHome,
+    capabilityOverrides: codexUnknownAvailabilityCapabilities(),
+  });
+  assert.deepEqual(defaults.hosts.codex.customAgents.enabled, { value: false, source: "plugin" });
+  assert.equal(defaults.hosts.codex.customAgents.definition.status, "not-checked");
+  assert.equal(fs.existsSync(bareCodexHome), false);
+
+  const root = fixture();
+  const codexHome = path.join(fixture(), "codex-home");
+  writeToml(path.join(root, ".harness/config.toml"), {
+    hosts: {
+      codex: {
+        custom_agents: { enabled: false },
+        roles: {
+          planner: { model: "gpt-5.6-luna", effort: "high" },
+          generator: { model: "gpt-5.6-luna", effort: "xhigh" },
+          evaluator: { model: "gpt-5.6-luna", effort: "medium" },
+        },
+      },
+    },
+  });
+  writeToml(path.join(root, ".harness/config.local.toml"), {
+    hosts: { codex: { custom_agents: { enabled: true } } },
+  });
+  writeCompatibleCodexLunaAgent(codexHome);
+
+  const result = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    capabilityOverrides: codexAppCapabilities(),
+    currentModelTier: "standard",
+  });
+  assert.deepEqual(result.hosts.codex.customAgents.enabled, { value: true, source: "personal" });
+  assert.equal(result.hosts.codex.roles.planner.model.effective, "gpt-5.6-luna");
+  assert.equal(result.hosts.codex.roles.planner.effort.effective, "high");
+  assert.equal(result.hosts.codex.roles.generator.model.effective, "gpt-5.6-luna");
+  assert.equal(result.hosts.codex.roles.generator.effort.effective, "xhigh");
+  assert.equal(result.hosts.codex.roles.evaluator.model.effective, "gpt-5.6-luna");
+  assert.equal(result.hosts.codex.roles.evaluator.effort.effective, "medium");
+
+  const noLunaRoot = fixture();
+  const untouchedCodexHome = path.join(fixture(), "untouched-codex-home");
+  writeToml(path.join(noLunaRoot, ".harness/config.toml"), {
+    hosts: {
+      codex: {
+        custom_agents: { enabled: true },
+        roles: { planner: { model: "gpt-5.6-sol", effort: "high" } },
+      },
+    },
+  });
+  const noLuna = resolveRuntimeConfig({
+    root: noLunaRoot,
+    host: "codex",
+    codexHome: untouchedCodexHome,
+    capabilityOverrides: completeCapabilities(),
+  });
+  assert.equal(noLuna.hosts.codex.customAgents.definition.status, "not-checked");
+  assert.equal(fs.existsSync(untouchedCodexHome), false);
+  assert.equal(noLuna.warnings.some((item) => item.code.startsWith("custom-agent-definition-")), false);
+});
+
+check("compatible Luna definition gives every Codex role a fresh custom-agent dispatch contract", () => {
+  const root = fixture();
+  const codexHome = path.join(fixture(), "codex-home");
+  const target = writeCompatibleCodexLunaAgent(codexHome);
+  writeToml(path.join(root, ".harness/config.toml"), {
+    hosts: {
+      codex: {
+        custom_agents: { enabled: true },
+        roles: {
+          planner: { model: "gpt-5.6-luna", effort: "high" },
+          generator: { model: "gpt-5.6-luna", effort: "xhigh" },
+          evaluator: { model: "gpt-5.6-luna", effort: "inherit" },
+        },
+      },
+    },
+  });
+
+  // The direct App model list intentionally excludes Luna. A compatible
+  // agent_type definition is the separate application path under test.
+  const result = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    capabilityOverrides: codexAppCapabilities(),
+    currentModelTier: "standard",
+  });
+  assert.equal(result.hosts.codex.customAgents.definition.path, target);
+  assert.equal(result.hosts.codex.customAgents.definition.status, "compatible");
+  for (const role of ["planner", "generator", "evaluator"]) {
+    const resolved = result.hosts.codex.roles[role];
+    assert.equal(resolved.dispatch.mode, "custom-agent");
+    assert.equal(resolved.dispatch.status, "ready");
+    assert.equal(resolved.dispatch.agentType, "harness_luna_worker");
+    assert.equal(resolved.dispatch.modelOverride, null);
+    assert.equal(resolved.dispatch.forkTurns, "none");
+    assert.equal(resolved.dispatch.resume, false);
+    assert.equal(resolved.lifecycle.action, "fresh");
+  }
+  assert.equal(result.hosts.codex.roles.planner.dispatch.reasoningEffort, "high");
+  assert.equal(result.hosts.codex.roles.generator.dispatch.reasoningEffort, "xhigh");
+  assert.equal(result.hosts.codex.roles.evaluator.dispatch.reasoningEffort, null);
+  assert.equal(result.verification.launchVerified, false);
+});
+
+check("disabled, missing, and conflicting Codex agent definitions never masquerade as ready", () => {
+  const root = fixture();
+  const codexHome = path.join(fixture(), "codex-home");
+  writeToml(path.join(root, ".harness/config.toml"), {
+    hosts: {
+      codex: {
+        custom_agents: { enabled: false },
+        roles: { generator: { model: "gpt-5.6-luna", effort: "xhigh" } },
+      },
+    },
+  });
+  const disabled = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    capabilityOverrides: codexUnknownAvailabilityCapabilities(),
+    currentModelTier: "standard",
+  });
+  assert.equal(disabled.hosts.codex.roles.generator.dispatch.mode, "direct");
+  assert.equal(disabled.hosts.codex.customAgents.definition.status, "not-checked");
+  assert.equal(fs.existsSync(codexHome), false);
+
+  writeToml(path.join(root, ".harness/config.local.toml"), {
+    hosts: { codex: { custom_agents: { enabled: true } } },
+  });
+  const missing = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    capabilityOverrides: codexUnknownAvailabilityCapabilities(),
+    currentModelTier: "standard",
+  });
+  assert.equal(missing.hosts.codex.customAgents.definition.status, "missing");
+  assert.equal(missing.hosts.codex.roles.generator.dispatch.mode, "custom-agent");
+  assert.equal(missing.hosts.codex.roles.generator.dispatch.status, "blocked");
+  assert.equal(missing.hosts.codex.roles.generator.dispatch.blockedReason, "agent-definition-missing");
+  assert.equal(missing.hosts.codex.roles.generator.lifecycle.action, "idle");
+  assert.equal(fs.existsSync(codexHome), false);
+
+  const target = writeCompatibleCodexLunaAgent(codexHome);
+  const original = `${canonicalCodexLunaAgent}model_reasoning_effort = "max"\n`;
+  fs.writeFileSync(target, original);
+  const conflict = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    capabilityOverrides: codexUnknownAvailabilityCapabilities(),
+    currentModelTier: "standard",
+  });
+  assert.equal(conflict.hosts.codex.customAgents.definition.status, "conflict");
+  assert.ok(conflict.hosts.codex.customAgents.definition.issues.includes("model_reasoning_effort must be omitted"));
+  assert.equal(conflict.hosts.codex.roles.generator.dispatch.status, "blocked");
+  assert.equal(conflict.hosts.codex.roles.generator.dispatch.blockedReason, "agent-definition-conflict");
+  assert.equal(fs.readFileSync(target, "utf8"), original);
+});
+
+check("strong Generator routing wins before custom Luna selection", () => {
+  const root = fixture();
+  const codexHome = path.join(fixture(), "codex-home");
+  writeCompatibleCodexLunaAgent(codexHome);
+  writeToml(path.join(root, ".harness/config.toml"), {
+    hosts: {
+      codex: {
+        custom_agents: { enabled: true },
+        roles: {
+          generator: {
+            model: "gpt-5.6-luna",
+            effort: "xhigh",
+            escalation: {
+              model: "gpt-5.6-sol",
+              effort: "high",
+              after_failures: 2,
+              on_evaluator_recommendation: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  const cases = [
+    { sprintRisk: "high" },
+    { failureKind: "implementation-issue", retryCount: 2 },
+    { evaluatorRecommendation: { tier: "strong", evidenceVerified: true } },
+  ];
+  for (const routingInput of cases) {
+    const result = resolveRuntimeConfig({
+      root,
+      host: "codex",
+      codexHome,
+      capabilityOverrides: completeCapabilities(),
+      currentModelTier: "standard",
+      ...routingInput,
+    });
+    const generator = result.hosts.codex.roles.generator;
+    assert.equal(generator.routing.modelTier, "strong");
+    assert.equal(generator.model.effective, "gpt-5.6-sol");
+    assert.equal(generator.effort.effective, "high");
+    assert.equal(generator.dispatch.mode, "direct");
+    assert.equal(generator.dispatch.modelOverride, "gpt-5.6-sol");
+    assert.equal(generator.dispatch.agentType, null);
+    assert.equal(generator.lifecycle.action, "fresh");
+  }
+
+  const missingHome = path.join(fixture(), "missing-codex-home");
+  const highRiskWithoutDefinition = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome: missingHome,
+    capabilityOverrides: completeCapabilities(),
+    currentModelTier: "standard",
+    sprintRisk: "high",
+  });
+  assert.equal(highRiskWithoutDefinition.hosts.codex.customAgents.definition.status, "not-checked");
+  assert.equal(highRiskWithoutDefinition.hosts.codex.roles.generator.dispatch.mode, "direct");
+  assert.equal(fs.existsSync(missingHome), false);
+});
+
+check("Codex agent provisioner requires approval and never overwrites compatible or conflicting files", () => {
+  const codexHome = path.join(fixture(), "codex-home");
+  const target = path.join(codexHome, "agents/harness-luna-worker.toml");
+
+  const preview = runCodexAgentProvisioner(["--codex-home", codexHome, "--json"]);
+  assert.equal(preview.status, 3);
+  const previewResult = JSON.parse(preview.stdout);
+  assert.equal(previewResult.definition.status, "missing");
+  assert.equal(previewResult.changed, false);
+  assert.equal(previewResult.approvalRequired, true);
+  assert.equal(previewResult.definition.path, target);
+  assert.equal(previewResult.proposedToml, canonicalCodexLunaAgent);
+  assert.equal(fs.existsSync(codexHome), false);
+
+  const approved = runCodexAgentProvisioner(["--codex-home", codexHome, "--approve", "--json"]);
+  assert.equal(approved.status, 0, approved.stderr);
+  const approvedResult = JSON.parse(approved.stdout);
+  assert.equal(approvedResult.changed, true);
+  assert.equal(approvedResult.definition.status, "compatible");
+  assert.equal(approvedResult.newTaskRequired, true);
+  assert.equal(fs.readFileSync(target, "utf8"), canonicalCodexLunaAgent);
+
+  const compatibleHash = sha(target);
+  const repeated = runCodexAgentProvisioner(["--codex-home", codexHome, "--approve", "--json"]);
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(JSON.parse(repeated.stdout).changed, false);
+  assert.equal(sha(target), compatibleHash);
+
+  fs.writeFileSync(target, 'name = "someone_else"\nmodel = "gpt-5.6-luna"\n');
+  const conflictHash = sha(target);
+  const conflict = runCodexAgentProvisioner(["--codex-home", codexHome, "--approve", "--json"]);
+  assert.equal(conflict.status, 2);
+  const conflictResult = JSON.parse(conflict.stdout);
+  assert.equal(conflictResult.definition.status, "conflict");
+  assert.equal(conflictResult.changed, false);
+  assert.ok(conflictResult.options.some((item) => item.includes("custom_agents.enabled = false")));
+  assert.equal(sha(target), conflictHash);
+
+  const invalidHome = path.join(fixture(), "invalid-codex-home");
+  const invalidTarget = path.join(invalidHome, "agents/harness-luna-worker.toml");
+  fs.mkdirSync(path.dirname(invalidTarget), { recursive: true });
+  fs.writeFileSync(invalidTarget, "name = [\n");
+  const invalidHash = sha(invalidTarget);
+  const invalid = runCodexAgentProvisioner(["--codex-home", invalidHome, "--approve", "--json"]);
+  assert.equal(invalid.status, 2);
+  assert.equal(JSON.parse(invalid.stdout).definition.status, "conflict");
+  assert.equal(sha(invalidTarget), invalidHash);
+
+  const symlinkHome = path.join(fixture(), "symlink-codex-home");
+  const symlinkTarget = path.join(symlinkHome, "agents/harness-luna-worker.toml");
+  const outside = path.join(fixture(), "outside-agent.toml");
+  fs.mkdirSync(path.dirname(symlinkTarget), { recursive: true });
+  fs.writeFileSync(outside, canonicalCodexLunaAgent);
+  fs.symlinkSync(outside, symlinkTarget);
+  const outsideHash = sha(outside);
+  const symlink = runCodexAgentProvisioner(["--codex-home", symlinkHome, "--approve", "--json"]);
+  assert.equal(symlink.status, 2);
+  assert.equal(JSON.parse(symlink.stdout).definition.status, "conflict");
+  assert.equal(fs.lstatSync(symlinkTarget).isSymbolicLink(), true);
+  assert.equal(sha(outside), outsideHash);
+
+  const linkedParentRoot = fixture();
+  const realParent = path.join(fixture(), "real-parent");
+  const linkedParent = path.join(linkedParentRoot, "linked-parent");
+  fs.mkdirSync(realParent, { recursive: true });
+  fs.symlinkSync(realParent, linkedParent);
+  const linkedHome = path.join(linkedParent, "codex-home");
+  const linked = runCodexAgentProvisioner(["--codex-home", linkedHome, "--approve", "--json"]);
+  assert.equal(linked.status, 2);
+  assert.match(JSON.parse(linked.stdout).error, /real directory/);
+  assert.equal(fs.existsSync(path.join(realParent, "codex-home")), false);
 });
 
 check("generated guidance preserves hidden-schema exact dispatch rules", () => {
@@ -603,6 +929,11 @@ check("verified Evaluator recommendation and high-risk Sprint select a fresh str
 check("spec issues route to Planner and the third implementation failure stops for the user", () => {
   const root = fixture();
   writeExplicitCodexRoutingConfig(root);
+  writeToml(path.join(root, ".harness/config.local.toml"), {
+    hosts: { codex: { custom_agents: { enabled: true } } },
+  });
+  const codexHome = path.join(fixture(), "codex-home");
+  writeCompatibleCodexLunaAgent(codexHome);
   const capabilities = completeCapabilities();
 
   const specIssue = resolveRuntimeConfig({
@@ -612,6 +943,7 @@ check("spec issues route to Planner and the third implementation failure stops f
     retryCount: 2,
     failureKind: "spec-issue",
     currentModelTier: "strong",
+    codexHome,
     capabilityOverrides: capabilities,
   });
   assert.equal(specIssue.routing.nextRole, "planner");
@@ -620,7 +952,16 @@ check("spec issues route to Planner and the third implementation failure stops f
   assert.equal(specIssue.hosts.codex.roles.generator.routing.reason, "generator-not-routed");
   assert.equal(specIssue.hosts.codex.roles.generator.routing.rotateReason, null);
   assert.equal(specIssue.hosts.claudeCode.roles.generator.routing.modelTier, null);
-  assert.notEqual(specIssue.hosts.codex.roles.generator.lifecycle.action, "fresh");
+  assert.notEqual(specIssue.hosts.codex.roles.planner.lifecycle.action, "idle");
+  assert.equal(specIssue.hosts.codex.roles.planner.dispatch.status, "ready");
+  for (const role of ["generator", "evaluator"]) {
+    assert.equal(specIssue.hosts.codex.roles[role].lifecycle.action, "idle");
+    assert.equal(specIssue.hosts.codex.roles[role].dispatch.status, "blocked");
+    assert.equal(
+      specIssue.hosts.codex.roles[role].dispatch.blockedReason,
+      "spec-issue-routes-to-planner",
+    );
+  }
 
   const stopped = resolveRuntimeConfig({
     root,
@@ -629,11 +970,16 @@ check("spec issues route to Planner and the third implementation failure stops f
     retryCount: 3,
     failureKind: "implementation-issue",
     currentModelTier: "strong",
+    codexHome,
     capabilityOverrides: capabilities,
   });
   assert.equal(stopped.routing.nextRole, "user");
   assert.match(stopped.routing.stopReason, /three-consecutive-failures|retry-limit/);
-  assert.notEqual(stopped.hosts.codex.roles.generator.lifecycle.action, "resume");
+  for (const role of ["planner", "generator", "evaluator"]) {
+    assert.equal(stopped.hosts.codex.roles[role].lifecycle.action, "idle");
+    assert.equal(stopped.hosts.codex.roles[role].dispatch.status, "blocked");
+    assert.equal(stopped.hosts.codex.roles[role].dispatch.blockedReason, "three-consecutive-failures");
+  }
 });
 
 check("personal escalation leaves merge without erasing shared strong model and effort", () => {
@@ -1149,6 +1495,29 @@ check("subagents false normalizes every new execution path to isolated-work-unit
     assert.equal(result.hosts.claudeCode.roles.generator.lifecycle.action, "isolated-work-unit");
     assert.equal(result.hosts.claudeCode.roles.evaluator.lifecycle.action, "isolated-work-unit");
   }
+
+  const codexHome = path.join(fixture(), "codex-home");
+  writeCompatibleCodexLunaAgent(codexHome);
+  writeToml(path.join(root, ".harness/config.toml"), {
+    lifecycle: "fresh",
+    hosts: {
+      codex: {
+        custom_agents: { enabled: true },
+        roles: { generator: { model: "gpt-5.6-luna", effort: "xhigh" } },
+      },
+    },
+  });
+  capabilities.codex.subagents = false;
+  const codex = resolveRuntimeConfig({
+    root,
+    host: "codex",
+    codexHome,
+    currentModelTier: "standard",
+    capabilityOverrides: capabilities,
+  });
+  assert.equal(codex.hosts.codex.roles.generator.lifecycle.action, "isolated-work-unit");
+  assert.equal(codex.hosts.codex.roles.generator.dispatch.status, "blocked");
+  assert.equal(codex.hosts.codex.roles.generator.dispatch.blockedReason, "subagents-unavailable");
 });
 
 check("Codex conservative defaults use isolated work units and source-aware resume warnings", () => {

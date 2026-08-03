@@ -448,10 +448,28 @@ This applies to every exact model/effort selected by shared config, personal con
 the documented Luna/Sol routing example. Harness does not rename or guess the value, and launch verification requires
 matching child host metadata.
 
-Codex App is partially capable on the same date. Fresh Sol/high and Terra/xhigh overrides matched child metadata, while
-an explicit Luna request still failed with `Unknown model` on 2026-07-20. A follow-up turn on completed Sol/high and Terra/xhigh children
-recorded Sol/low, so App resume is not treated as preserving routed model/effort. This is observed runtime evidence,
-not a permanent product rule.
+Codex App's direct model-override path remained partial on 2026-07-20. Fresh Sol/high and Terra/xhigh overrides matched
+child metadata, while an explicit Luna request failed with `Unknown model`. A follow-up turn on completed Sol/high and
+Terra/xhigh children recorded Sol/low, so App resume is not treated as preserving routed model/effort. This is observed
+runtime evidence, not a permanent product rule.
+
+#### Luna custom-agent compatibility path (v0.5.1)
+
+On 2026-08-03, a new Codex App task successfully launched a project custom agent whose definition selected
+`gpt-5.6-luna`; child metadata recorded Luna with the dispatch-supplied `medium` effort. A definition with a fixed
+`model_reasoning_effort` instead overrode the dispatch value. The compatibility path therefore fixes only the model in a
+global `harness_luna_worker` definition, omits effort there, and passes the resolved role effort at dispatch time.
+
+The path is an explicit opt-in, `hosts.codex.custom_agents.enabled`, separate from role model selection and defaulting to
+`false`. When enabled, an exact Luna Planner, Generator, or Evaluator uses `agent_type = "harness_luna_worker"`, no model
+override, and `fork_turns: "none"`. Every dispatch is fresh; custom-agent resume and full-history forks are not used. A
+strong Generator decision is resolved first and goes directly to fresh Sol/high without trying the Luna agent.
+
+The resolver remains read-only. It reports a missing or conflicting global definition but never writes one. The separate
+`provision-codex-agent.mjs` command creates a missing definition only with `--approve`, validates it after writing, reuses
+an already compatible file, and never overwrites a conflict. Because Codex discovers agent names when a task starts, a
+new definition takes effect from a new Codex task. This is a temporary compatibility layer: once direct Luna dispatch is
+reliably available, users can disable it without changing their role model settings.
 
 Shared `.harness/config.toml` therefore expresses desired role values only; it does not duplicate App and CLI settings.
 The orchestrator supplies a current capability snapshot with available models, efforts, and role-level application paths.
