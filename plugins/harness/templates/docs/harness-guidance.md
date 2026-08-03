@@ -63,6 +63,12 @@ For substantial app, site, tool, or multi-step feature work, use Agentic Harness
   `Rotate: model-availability` instead. If Generator is not the next role, do not persist its null routing tier.
 - Even at the same tier, resume only when `resume: true` is backed by host metadata proving that routed model/effort is
   preserved. Follow-up support alone is insufficient, and unverified paths use a fresh role work unit.
+- `hosts.codex.custom_agents.enabled` defaults to `false` and controls only the custom-agent application path. When true,
+  an exact Luna Planner, Generator, or Evaluator uses `harness_luna_worker` with no model override, the resolved effort,
+  and a fresh non-full-history dispatch. Strong Generator routing is decided first and goes directly to Sol.
+- The resolver never writes the global definition. On `missing`, show the complete proposal and obtain explicit approval
+  before running `node "$PLUGIN_ROOT/scripts/provision-codex-agent.mjs" --approve`; on `conflict`, do not overwrite.
+  After a new definition is created, continue from a new Codex task.
 - If an older state has no `Model Tier`, pass resolver-only `unknown`, persist the returned tier with
   `Rotate: runtime-migration`, and fresh-dispatch once; never persist `unknown`. If only `Rotate` is missing, add `none`.
 - Do not overwrite existing guidance, Agent definitions, or Harness settings to apply runtime configuration.

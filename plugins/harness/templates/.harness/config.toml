@@ -24,6 +24,11 @@ effort = "inherit"
 
 # EN: Codex roles inherit the current host model and effort by default.
 # JA: Codexの各roleも既定で現在のhost model / effortを継承します。
+[hosts.codex.custom_agents]
+# EN: Opt in to the global harness_luna_worker path when a role resolves to exactly gpt-5.6-luna.
+# JA: roleが正確にgpt-5.6-lunaへ解決された場合にglobal harness_luna_worker経路を使う明示スイッチです。
+enabled = false
+
 [hosts.codex.roles.planner]
 model = "inherit"
 effort = "inherit"
@@ -90,6 +95,12 @@ max_spec_issue_returns = 2
 # EN: still use the standard/strong routing rules. Terra is never selected automatically.
 # JA: 配布時のCodex各roleはすべてinheritです。共有設定、個人設定、またはユーザー指定で明示した値には、
 # JA: 引き続きstandard / strongのrouting規則を適用します。Terraは自動選択しません。
+
+# EN: custom_agents.enabled controls only the application path. When true, an exact Luna role uses
+# EN: harness_luna_worker without a model override, passes only the resolved effort, and always starts fresh.
+# EN: The global definition is never created by the resolver; provisioning requires explicit approval.
+# JA: custom_agents.enabledは起動経路だけを切り替えます。trueかつLunaのroleはmodelを重ねて渡さず、
+# JA: 解決済みeffortだけを渡して毎回freshに起動します。resolverはglobal定義を作成せず、作成には明示承認が必要です。
 
 # EN: A displayed Codex spawn schema may omit model, effort, and agent_type even when the runtime parser
 # EN: accepts them. Try the resolver's exact dispatch-attempt values once on the actual role. Use agent_type,
