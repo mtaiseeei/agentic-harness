@@ -108,10 +108,10 @@ node /path/to/harness-plugin/scripts/harness.mjs check --root "$(pwd)"
 現在は未実装です。
 
 Windowsでは、ディレクトリの検索可否を表さないPOSIX実行bit `0o111`だけを事前判定から外します。
-read/write bit、Node.jsの`fs.accessSync`、bash側の実アクセス確認、symlink・ファイル種別・
-no-overwriteの検査は他OSと同じです。Node.jsからGit Bashへ渡す絶対パスは、drive-letter／UNC形式を
-Git Bash用のパスへ安全に変換します。保守者がWindows実機で初期化回帰を確認する場合は、
-Git for Windowsの`bash`と`git`をPATHから利用できる状態で次を実行します。
+read/write bit、Node.jsの`fs.accessSync`、symlink・ファイル種別・no-overwriteの検査は他OSと同じです。
+事前判定後の書き込みはNode.js自身が行うため、Windows sandbox内でMSYSの`mkdir`や`cp`だけが拒否される
+環境でもGit Bashの書き込み権限に依存しません。macOS/Linuxは従来のbash initializerを維持します。
+保守者がWindows実機で初期化回帰を確認する場合は、`git`をPATHから利用できる状態で次を実行します。
 
 ```powershell
 node scripts/check-windows-init.mjs --require-windows

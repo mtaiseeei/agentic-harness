@@ -8,6 +8,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { toGitBashPath } from "../plugins/harness/scripts/git-bash-path.mjs";
+import {
+  initializerKindForPlatform,
+  runNodeGuidanceInitializer,
+} from "../plugins/harness/scripts/node-guidance-initializer.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const harnessCommand = path.join(repoRoot, "plugins/harness/scripts/harness.mjs");
@@ -67,6 +71,63 @@ try {
     assert.throws(() => toGitBashPath("relative\\repo", "win32"), /absolute Windows drive or UNC/);
     assert.throws(() => toGitBashPath("\\\\.\\PIPE\\danger", "win32"), /device path/);
     assert.throws(() => toGitBashPath("\\\\?\\GLOBALROOT\\danger", "win32"), /device path/);
+  });
+
+  check("Windows selects the Node-native writer while POSIX keeps Bash", () => {
+    assert.equal(initializerKindForPlatform("win32"), "node");
+    assert.equal(initializerKindForPlatform("darwin"), "bash");
+    assert.equal(initializerKindForPlatform("linux"), "bash");
+  });
+
+  check("Node-native initializer preserves the Bash initialization contract", () => {
+    const nodeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "Harness Node initializer 日本語 "));
+    try {
+      const git = spawnSync("git", ["init", "-q"], { cwd: nodeRoot, encoding: "utf8" });
+      assert.equal(git.status, 0, git.stderr || git.error?.message);
+      fs.writeFileSync(path.join(nodeRoot, "OWNER.md"), "owner content\n");
+      fs.writeFileSync(path.join(nodeRoot, "AGENTS.md"), "# owner guidance\n");
+      fs.mkdirSync(path.join(nodeRoot, ".harness"));
+      fs.writeFileSync(path.join(nodeRoot, ".harness/.gitignore"), "owner-rule");
+      fs.writeFileSync(path.join(nodeRoot, ".harness/config.json"), '{"lifecycle":"fresh"}\n');
+
+      const first = runNodeGuidanceInitializer(nodeRoot);
+      assert.equal(first.status, 0, first.stderr);
+      assert.match(first.stdout, /Agentic Harness guidance initialized/);
+      assert.match(first.stdout, /verified git ignore/);
+      assert.match(first.stderr, /no competing TOML was created/);
+      assert.equal(fs.readFileSync(path.join(nodeRoot, "OWNER.md"), "utf8"), "owner content\n");
+      assert.equal(fs.readFileSync(path.join(nodeRoot, "AGENTS.md"), "utf8"), "# owner guidance\n");
+      assert.equal(
+        fs.readFileSync(path.join(nodeRoot, ".harness/.gitignore"), "utf8"),
+        "owner-rule\nconfig.local.toml\nconfig.local.json\n",
+      );
+      assert.equal(fs.existsSync(path.join(nodeRoot, ".harness/config.toml")), false);
+      assert.equal(fs.statSync(path.join(nodeRoot, "docs/harness-guidance.md")).isFile(), true);
+      for (const relative of ["package.json", "package-lock.json", "node_modules"]) {
+        assert.equal(fs.existsSync(path.join(nodeRoot, relative)), false, `${relative} was created`);
+      }
+
+      const protectedFiles = [
+        "OWNER.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".harness/config.json",
+        ".harness/.gitignore",
+        "docs/sprints/state.md",
+        "docs/harness-guidance.md",
+      ];
+      const digests = Object.fromEntries(
+        protectedFiles.map((relative) => [relative, sha(path.join(nodeRoot, relative))]),
+      );
+      const second = runNodeGuidanceInitializer(nodeRoot);
+      assert.equal(second.status, 0, second.stderr);
+      assert.match(second.stdout, /already present; no files overwritten/);
+      for (const [relative, digest] of Object.entries(digests)) {
+        assert.equal(sha(path.join(nodeRoot, relative)), digest, `${relative} changed`);
+      }
+    } finally {
+      fs.rmSync(nodeRoot, { recursive: true, force: true });
+    }
   });
 
   check("git repository setup", () => {

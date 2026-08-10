@@ -5,13 +5,17 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { toGitBashPath } from "./git-bash-path.mjs";
+import {
+  ignoreRules,
+  initializerKindForPlatform,
+  runNodeGuidanceInitializer,
+} from "./node-guidance-initializer.mjs";
 import { permissionBitsAllow } from "./platform-permissions.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(scriptDir, "..");
 const initializer = path.join(scriptDir, "init-guidance.sh");
 const templatesRoot = path.join(pluginRoot, "templates");
-const ignoreRules = ["config.local.toml", "config.local.json"];
 
 const directoryTargets = [
   ".harness",
@@ -310,21 +314,31 @@ function runInit(root) {
     return 2;
   }
 
-  let bashInitializer;
-  let bashRoot;
-  try {
-    bashInitializer = toGitBashPath(initializer);
-    bashRoot = toGitBashPath(root);
-  } catch (error) {
-    console.error(`[unsafe] Harness path conversion failed: ${error.message}`);
-    console.error("Harness init refused: unsafe target; no files were changed.");
-    return 2;
-  }
+  let initialized;
+  if (initializerKindForPlatform() === "node") {
+    try {
+      initialized = runNodeGuidanceInitializer(root, { pluginRoot });
+    } catch (error) {
+      console.error(`Harness init failed: ${error.message}`);
+      return 2;
+    }
+  } else {
+    let bashInitializer;
+    let bashRoot;
+    try {
+      bashInitializer = toGitBashPath(initializer);
+      bashRoot = toGitBashPath(root);
+    } catch (error) {
+      console.error(`[unsafe] Harness path conversion failed: ${error.message}`);
+      console.error("Harness init refused: unsafe target; no files were changed.");
+      return 2;
+    }
 
-  const initialized = spawnSync("bash", [bashInitializer, bashRoot], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+    initialized = spawnSync("bash", [bashInitializer, bashRoot], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
   if (initialized.stdout) process.stdout.write(initialized.stdout);
   if (initialized.stderr) process.stderr.write(initialized.stderr);
   if (initialized.error) {
