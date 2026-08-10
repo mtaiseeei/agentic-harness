@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { toGitBashPath } from "./git-bash-path.mjs";
 import { permissionBitsAllow } from "./platform-permissions.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -309,7 +310,18 @@ function runInit(root) {
     return 2;
   }
 
-  const initialized = spawnSync("bash", [initializer, root], {
+  let bashInitializer;
+  let bashRoot;
+  try {
+    bashInitializer = toGitBashPath(initializer);
+    bashRoot = toGitBashPath(root);
+  } catch (error) {
+    console.error(`[unsafe] Harness path conversion failed: ${error.message}`);
+    console.error("Harness init refused: unsafe target; no files were changed.");
+    return 2;
+  }
+
+  const initialized = spawnSync("bash", [bashInitializer, bashRoot], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

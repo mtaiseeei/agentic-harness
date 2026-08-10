@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { toGitBashPath } from "../plugins/harness/scripts/git-bash-path.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const harnessCommand = path.join(repoRoot, "plugins/harness/scripts/harness.mjs");
@@ -36,12 +37,36 @@ function sha(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "Agentic Harness Windows 日本語 "));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "Agentic Harness Windows 日本語 ; $(literal) "));
 try {
   console.log(`OS=${process.platform} arch=${process.arch} node=${process.version}`);
 
   check("runner requirement", () => {
     if (requireWindows) assert.equal(process.platform, "win32", "Windowsネイティブrunnerではありません");
+  });
+
+  check("Windows paths cross the Git Bash boundary without shell evaluation", () => {
+    assert.equal(
+      toGitBashPath("C:\\Users\\Taisei\\Agentic Harness 日本語", "win32"),
+      "/c/Users/Taisei/Agentic Harness 日本語",
+    );
+    assert.equal(
+      toGitBashPath("d:/Work/repo; $(touch NOT_EVALUATED)", "win32"),
+      "/d/Work/repo; $(touch NOT_EVALUATED)",
+    );
+    assert.equal(
+      toGitBashPath("\\\\server\\共有\\Harness folder", "win32"),
+      "//server/共有/Harness folder",
+    );
+    assert.equal(toGitBashPath("\\\\?\\C:\\long path\\repo", "win32"), "/c/long path/repo");
+    assert.equal(
+      toGitBashPath("\\\\?\\UNC\\server\\共有\\repo", "win32"),
+      "//server/共有/repo",
+    );
+    assert.equal(toGitBashPath("/tmp/unchanged", "darwin"), "/tmp/unchanged");
+    assert.throws(() => toGitBashPath("relative\\repo", "win32"), /absolute Windows drive or UNC/);
+    assert.throws(() => toGitBashPath("\\\\.\\PIPE\\danger", "win32"), /device path/);
+    assert.throws(() => toGitBashPath("\\\\?\\GLOBALROOT\\danger", "win32"), /device path/);
   });
 
   check("git repository setup", () => {
@@ -50,7 +75,7 @@ try {
   });
 
   let firstDigests;
-  check("init accepts a writable path with spaces and Japanese text", () => {
+  check("init accepts a writable path with spaces, Japanese text, and shell metacharacters", () => {
     fs.writeFileSync(path.join(root, "OWNER.md"), "owner content\n");
     const result = spawnSync(process.execPath, [harnessCommand, "init", "--root", root], {
       encoding: "utf8",

@@ -230,11 +230,12 @@ The Node.js preflight keeps POSIX mode-bit checks as a second signal alongside `
 directory search permission as a POSIX execute bit, and a writable directory may report no `0o111` bit. The preflight
 therefore ignores only execute bits on `win32`; read/write mode checks and `fs.accessSync` remain required. Path type,
 symlink, destination inventory, and no-overwrite checks are unchanged. The bash initializer remains the write-time
-authority and performs its own real access checks before creating files.
+authority and performs its own real access checks before creating files. Before spawning Git Bash, the Node.js entry
+point converts Windows drive-letter and UNC roots to Git Bash POSIX paths without constructing a shell command string.
 
 The repository regression `node scripts/check-windows-init.mjs --require-windows` exercises a native Windows temporary
-repository whose path contains spaces and Japanese text, then verifies `init`, read-only `check`, idempotent re-init,
-owner-file preservation, and absence of target-package dependencies.
+repository whose path contains spaces, Japanese text, and shell metacharacters, then verifies `init`, read-only `check`,
+idempotent re-init, owner-file preservation, and absence of target-package dependencies.
 
 ### No Target-Repository Dependency Installation
 
