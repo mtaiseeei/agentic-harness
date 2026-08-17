@@ -128,15 +128,16 @@ function validatePositioning(repoRoot) {
       "3回目の連続失敗",
       "spec-issue",
       "Terra",
-      "2026-07-20",
+      "2026-08-17",
       "Codex CLI",
       "Codex App",
       "Unknown model",
       "フル経路",
       "公開schema",
       "runtime parser",
-      "agent_type",
       "agent_role",
+      "built-in/default",
+      "hosts.codex.custom_agents",
       "任意の正式なmodel / effort",
     ]);
   });
@@ -238,13 +239,14 @@ function validatePositioning(repoRoot) {
       "dispatch-ready",
       "launch-verified",
       "Terra",
-      "2026-07-18",
+      "2026-08-17",
       "Codex CLI",
       "Codex App",
       "full role-model routing",
     ]);
     includesAll("plugins/harness/skills/harness-loop/SKILL.md", loop, [
       "2026-07-20",
+      "2026-08-17",
       "Codex CLI",
       "Codex App",
       'fork_turns: "none"',
@@ -265,7 +267,7 @@ function validatePositioning(repoRoot) {
       "resume: true",
       "model / effort保持",
       "host metadata",
-      "freshなLuna Generator",
+      "保持を確認できない実行面ではfresh",
     ]);
     includesAll("plugins/harness/templates/docs/harness-guidance.md", harnessGuidance, [
       "resume: true",
@@ -285,6 +287,7 @@ function validatePositioning(repoRoot) {
   });
 
   check("plugin and marketplace versions stay synchronized", () => {
+    assert.equal(claudeManifest.version, "0.5.3");
     assert.equal(claudeManifest.version, codexManifest.version);
     assert.equal(claudeMarketplace.metadata.version, claudeManifest.version);
     assert.equal(claudeMarketplace.plugins[0].version, claudeManifest.version);
