@@ -158,7 +158,7 @@ Codexの配布時既定は、Claude Codeと同じく全roleでhost設定を継�
 Sol / Lunaなどを共有設定、個人設定、またはユーザー指定で明示した場合は、以下のrouting機能を引き続き利用できます。
 後述の検証例で使う正式IDは `gpt-5.6-luna` / `gpt-5.6-sol` です。
 
-### Codex実行面の確認状況（2026-07-20）
+### Codex実行面の確認状況（2026-08-17）
 
 ここでいう「フル経路」は、Planner / Generator / Evaluatorそれぞれについて、希望model / effortをnativeな
 fresh Subagentの起動引数へ渡し、host側metadataで実値を確認できる経路を指します。Codex全機能の優劣を
@@ -167,20 +167,23 @@ fresh Subagentの起動引数へ渡し、host側metadataで実値を確認でき
 | 実行面 | このrouting機能の状況 | host側で確認できたこと |
 |---|---|---|
 | Codex CLI | フル経路を確認済み | CLI 0.144.6では公開schemaに欄が無くても`model` / `reasoning_effort`をruntime parserが受理し、freshなLuna/xhighの子session metadataと一致 |
-| Codex App | 部分対応 | freshなSol/highとTerra/xhighは一致。2026-07-20の再確認でもLuna指定は`Unknown model`で拒否 |
+| Codex App | Luna direct経路を確認済み | Desktop `0.148.0-alpha.9`、multi-agent v2でbuilt-in/default AgentへLuna/xhighを直接渡し、child session `01a00c9a-94b4-78c3-9398-6361f49d9f69`のmetadataがmodel `gpt-5.6-luna`、effort `xhigh`、agent role `default`と一致 |
 | Claude Code | host設定を継承 | 既定は全role `inherit`。ユーザーがhostで有効な正式値を明示した場合だけ適用 |
 
 AppとCLIの差をCodex自身に判定させません。Harnessは現在のnative dispatch面がmodel / effort引数を
 受け付けるかを観測します。利用可能値一覧も取得できれば通常どおり事前解決し、引数はあるものの一覧が
 取得できない場合はresolverが`dispatch-attempt`を返します。その場合はダミーAgentではなく、設定値を付けた
-実際のroleを起動します。将来Codex AppでLunaが利用可能になってもconfig変更は不要です。
+実際のbuilt-in/default roleを起動します。
 
-Codex CLIでは、公開された`spawn_agent` schemaに`model`、`reasoning_effort`、`agent_type`が表示されなくても、
+Codex CLIでは、公開された`spawn_agent` schemaに`model`、`reasoning_effort`が表示されなくても、
 runtime parserが受理する場合があります。表示に欄が無いことだけで`inherit`へ戻さず、resolverの正確な値を
-実roleへ1回だけ渡して成否を確認します。custom agentの入力名は`agent_type`であり、`agent_role`は渡しません。
-`agent_role`はchild metadata側の確認値です。
+実roleへ1回だけ直接渡して成否を確認します。`agent_role`はchild metadata側の確認値であり、dispatch入力には使いません。
 これはLuna / Solだけの特例ではありません。共有config、個人config、ユーザー指定を含め、resolverが選んだ
 任意の正式なmodel / effortを名前変更せずdispatchし、child metadataと一致した場合だけ`launch-verified`にします。
+
+旧`hosts.codex.custom_agents`設定は互換性のため読み取りますが、値が`true`でも`false`でもroutingには使いません。
+resolverは非推奨pathをwarningへ示し、実効経路がnative direct dispatchであることを伝えます。既存設定や
+ユーザー所有のAgent定義を削除する必要はありません。新規初期化configには旧tableを生成しません。
 
 `dispatch-attempt`が`Unknown model`などの同期的な入力検証で子Agent作成前に拒否された場合だけ、正確な拒否値を
 resolverへ返して再解決します。standardにLuna、strongにSolを明示している場合、Lunaが拒否されるとfreshな
@@ -189,7 +192,7 @@ Sol/highへfallbackし、Solも拒否されると`inherit`へ戻ります。高�
 
 Codex Appで完了済みAgentへfollow-upした検証では、指定値がSol/lowへ変わったため、model / effortを保つresumeは
 未対応として扱います。CLIを含め、resume後も同じroutingがhost metadataで確認できるまでは、指定値が必要な
-roleは`fork_turns: "none"`のfresh起動を使います。これらは2026-07-18時点の観測結果であり、host更新後は
+roleはfresh起動を使います。これらのresume結果は以前の実行面での観測であり、host更新後は
 capabilityと実起動証拠を取り直します。
 
 strongへ昇格するのは、高リスクSprint、2回目の連続`implementation-issue`、またはEvaluatorの証拠付き推薦を
@@ -258,8 +261,8 @@ Sprint合格時に次Sprintが残っている場合、stateのModel Tierは最�
 その値とdesired tierを比較してからstateを更新するため、strong→standardの切替でも古いSolを誤ってresumeしません。
 全Sprint完了で次dispatchが無い場合だけ`standard` / `none`へ戻します。
 
-Codex plugin manifestはAgent定義を配布しないため、Codexのrole別指定は利用repoのcustom agentまたは
-現在のspawn面が対応するときだけ適用します。Harnessは既存の `AGENTS.md`、`CLAUDE.md`、Agent定義、
+Codex plugin manifestはAgent定義を配布しません。Codexのrole別指定は現在のnative spawn面が対応するときだけ、
+built-in/default Agentへ直接適用します。Harnessは既存の `AGENTS.md`、`CLAUDE.md`、Agent定義、
 設定を上書きしません。
 
 Claude Codeのrole別effortは通常のper-dispatch項目ではありません。project側Agent frontmatterなど、
