@@ -287,7 +287,7 @@ function validatePositioning(repoRoot) {
   });
 
   check("plugin and marketplace versions stay synchronized", () => {
-    assert.equal(claudeManifest.version, "0.5.3");
+    assert.equal(claudeManifest.version, "0.5.4");
     assert.equal(claudeManifest.version, codexManifest.version);
     assert.equal(claudeMarketplace.metadata.version, claudeManifest.version);
     assert.equal(claudeMarketplace.plugins[0].version, claudeManifest.version);
