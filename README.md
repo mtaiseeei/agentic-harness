@@ -151,8 +151,11 @@ node scripts/check-windows-init.mjs --require-windows
    対応する `docs/progress/sprint-*.md` に自己評価
 3. **Evaluator** が実際に操作してテストし、証跡付きで対応する `docs/feedback/sprint-*.md` に合否
 4. オーケストレーターが結果を `docs/sprints/state.md` に記録してから遷移。
-   不合格なら Generator に差し戻し（仕様欠陥なら Planner へ、不合格の主因が検証基盤側にある場合は
-   `verification-scope-issue` として選択肢付きでユーザーへ直行）→ 合格なら次スプリントへ。
+   不合格なら Generator に差し戻し、仕様欠陥なら Planner へ。
+   検証基盤側の `verification-scope-issue` は、期待結果・合否条件・証拠要件を変えず、新規基盤を増やさない
+   既存検証の局所修理に限り、同一Sprintで1回だけ Generator が修理し、Evaluator が独立再評価する。
+   再失敗・修理範囲不明・要求拡大など、この条件に収まらない場合は選択肢付きでユーザーへ返す
+   （詳細は[scope](plugins/harness/skills/harness-loop/references/scope.md)）。合格なら次スプリントへ。
    同一スプリント3回連続不合格、spec-issue 差し戻しの上限、系譜あたりの dispatch 予算
    （Lineage Dispatches）到達はユーザーにエスカレーション
 
