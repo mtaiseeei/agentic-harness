@@ -21,8 +21,8 @@ Agentic Harness は、企画・実装・独立評価・状態遷移を **Planner
 /plugin install harness@agentic-harness
 ```
 
-インストール後、Claude Code では SessionStart フックが入口スキル（`using-harness`）を
-additionalContext として注入します。普段は「〇〇なアプリを作って」と普通に会話してください。
+インストール後、Claude Code では SessionStart フックが入口スキル（`using-harness`）
+への短い案内を additionalContext として注入します。普段は「〇〇なアプリを作って」と普通に会話してください。
 明示的に始めたい場合だけ `/harness` を使います。
 
 After installing, just ask for what you want to build. You can also run:
@@ -60,6 +60,32 @@ Codex では `AGENTS.md` をプラグインから上書きせず、`using-harnes
 no-overwrite 初期化と `harness-loop` へ進みます。普段は「〇〇なアプリを作って」と普通に会話してください。
 明示的に始めたい場合だけ `$using-harness` または `$harness-loop` を指定します
 （`/harness` コマンドは Claude Code 専用で、Codex には配布されません）。
+
+## インストール済みpluginの更新
+
+GitHub登録のmarketplaceは、対象名を指定して更新してからpluginを更新します。
+CodexのCLIでは専用の`plugin update`ではなく、更新済みmarketplaceから`plugin add`で再取得します。
+
+```sh
+codex plugin marketplace upgrade agentic-harness-local
+codex plugin add harness@agentic-harness-local
+codex plugin list --marketplace agentic-harness-local --json
+```
+
+Claude CodeのCLIでは次を使います。例の`user`は現在の導入scopeがuserの場合です。
+`claude plugin list --json`で既存scopeを確認し、project / local等なら同じscopeを指定してください。
+
+```sh
+claude plugin marketplace update agentic-harness
+claude plugin update harness@agentic-harness --scope user
+claude plugin list --json
+```
+
+Codexでローカルcheckoutをmarketplaceとして登録している場合、`marketplace upgrade`はそのcheckoutを
+更新しません。登録元checkoutの既存変更を保持して対象releaseを取り込み、その後`plugin add`します。
+cache内のファイルを直接編集せず、設定、導入scope、既存repoのdirtyを維持してください。
+更新後は対象pluginのinstalled versionが`0.5.5`であることを確認し、新しいセッションで利用します。
+既存repoへの一括guidance書換えやruntime/model設定の変更はplugin更新に含みません。
 
 ## 使い方
 
@@ -331,8 +357,8 @@ Evaluator の未達記録は保持されます。
 3. **生成と評価を分離（GAN）** — 自己評価は甘くなる。独立した懐疑的な評価器がループを締める。
 4. **閾値で合否・苦手を重く** — 閾値の正本は `docs/spec/rubric.md`。プロジェクト種別に応じて
    Planner が調整し、モデルが苦手なデザイン性・独自性を重く見る。
-5. **実際に動かして検証・証跡を残す** — コードを読むだけにせず、利用可能なブラウザ検証面で
-   操作してから採点する。証跡（コマンド結果・実操作の記録・視覚評価時のスクリーンショット）の
+5. **実際に動かして検証・証跡を残す** — コードを読むだけにせず、UIはブラウザ、非UIはコマンド/APIの入出力を
+   実行してから採点する。証跡（コマンド結果・実操作の記録・視覚評価時のスクリーンショット）の
    無い合格は無効。同時に、rubric・契約に列挙した証拠形式を満たせば合格に十分（safe harbor）で、
    Evaluator が契約に無い証拠形式を発明して合否条件にすることはできない。
 6. **作る前に合意 / 完了前に検証** — brainstorm-before-build と verification-before-completion。
@@ -345,7 +371,7 @@ Evaluator の未達記録は保持されます。
 
 ## ブラウザ検証の方針
 
-Evaluator は環境ごとのネイティブな検証面を優先します。
+UIの評価では、Evaluator は環境ごとのネイティブな検証面を優先します。CLI/API/pluginの非UI評価はコマンドや入出力で行います。
 
 1. **Codex App:** Browser Use / `@Browser`
 2. **Claude Code Desktop App:** Preview pane / autoVerify
@@ -363,9 +389,9 @@ Claude Desktop は Preview、CLI は Playwright に寄せます。
 会話から Harness が起動した時、または `/harness` を明示実行した時だけ、no-overwrite で生成します。
 仕組みは次の通りです。
 
-1. **Claude Code:** `hooks/session-start.sh` が SessionStart 時に `skills/using-harness/SKILL.md` を読み、
-   Claude Code 固有の `hookSpecificOutput.additionalContext` として返します。これは「一時的に会話へ
-   入口説明を足す」だけで、リポジトリの `CLAUDE.md` は変更しません。
+1. **Claude Code:** `hooks/session-start.sh` は SessionStart（startup / clear / compact）で短い適用条件と
+   `skills/using-harness/SKILL.md` の場所だけを `hookSpecificOutput.additionalContext` として返します。
+   Skill全文は注入せず、該当依頼でだけ読みます。リポジトリの `CLAUDE.md` は変更しません。
 2. **Codex:** Codex は plugin から `AGENTS.md` を上書きしません。代わりに `.codex-plugin/plugin.json`
    で `skills/` を配布し、Codex が skill の `name` / `description` を見て必要時に `SKILL.md` を読みます。
 3. **Harness 初期化:** 取り込み先に `CLAUDE.md` / `AGENTS.md` / Harness runtime設定が無ければ、`.harness/config.toml` などを `templates/` から生成します。
@@ -395,3 +421,15 @@ Claude Desktop は Preview、CLI は Playwright に寄せます。
 ## ライセンス
 
 MIT
+
+## 指示の正本と更新
+
+通常進行は `plugins/harness/skills/harness-loop/SKILL.md`、runtime・移行・特殊失敗・評価の詳細は
+その条件付きreferencesを正本とします。既存検証の局所修理は期待結果と証拠要件を変えず同Sprint1回まで、
+意味不変の誤記訂正は既存承認で進めます。microは低リスクと独立検証可能性で判断し、証跡再利用は
+候補と関係する依存物の同一性を確かめます。無関係なdirtyを片付ける必要はありません。
+
+checkoutの変更は導入済みcacheや既存プロジェクトのguidanceを自動更新しません。Yasashiiへの反映は
+下流の同期手順を使います。v0.5.5の変更・互換性・更新案内は `docs/releases/v0.5.5.md` を参照してください。
+初期化のno-overwriteは維持します。明示承認済みのguidance保守は、固有規則と既存変更を保持して
+必要差分だけ反映できます。plugin更新だけでruntime/model設定やAgent定義を変更することはありません。
