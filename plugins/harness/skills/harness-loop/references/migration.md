@@ -61,8 +61,14 @@ unresolved/approval/constraint sections. This mechanical check does not recogniz
 all natural-language decisions. The reviewing Agent must check any other active
 rules and state meaning, then include exact important fragments in `preserve`.
 
-For a large state, retain the current purpose, work, unresolved items, next action,
-authorization/constraints, specification links and validation revision/evidence.
+For a large state, start from the latest explicit user instruction and current sources.
+Search across the source for the relevant work's approvals, constraints, unresolved
+items, counters and return destination; do not truncate inspection at the first 200
+lines or require an audit of every past Sprint. Retain the original purpose and
+completion condition, current work, unresolved/held items, next action, interruption
+exit/return destination when relevant, authorization/constraints, specification links
+and validation revision/evidence. Keep current counters without resetting them for
+cleanup; do not infer approvals, verdicts or budgets from historical duplicates.
 Distinguish implemented, verified and deployed. Do not create competing current
 state in NEXT_SESSION/PROJECT. The original state remains in the migration archive.
 When the candidate needs a historical link, choose the optional stable `id` before
@@ -75,6 +81,13 @@ Link that archive only when the original historical detail is needed. Do not tur
 an approximate size target into a stopping condition or compress into giant lines.
 A replaced decision must be identified as superseded in its relevant specification
 or decision record, with the old decision retained in history.
+
+Put the live values in one fixed `## 現在地` section at the start of the same canonical
+state. Mark any retained old body as `旧状態（履歴・現行値は先頭の現在地へ移管済み）`;
+old Current IDs and counters are historical, not competing current values. On future
+resume read that current section and necessary references, not the whole old body or
+archive. Resolve a specific contradiction against the latest human instruction and
+current sources; leave uncertain authority pending and continue authorized independent work.
 
 ## Preview, apply, verify
 
@@ -103,8 +116,21 @@ reported archive before recovery. In-process failures attempt rollback only whil
 the document still equals this command's output, so another writer's edit is not
 reverted. This is a local maintenance operation, not a crash-proof transaction.
 
+If a compact candidate fails protection checks, retain the exact original body and
+prepare a fallback candidate in the same state: one short `## 現在地` section followed
+by the explicitly marked old body. If a current section already exists, replace it
+rather than stacking another one. Reuse preview/apply and preserve protected text;
+do not weaken checks, build a summarizer, or start an all-history investigation.
+Record `整理未完了`, the protection failure and a separate maintenance follow-up in the
+current section, together with the authorized independent next action and any held
+operation whose approval is unknown. This fallback establishes current meaning but
+does not claim that archival cleanup succeeded. If it also fails, leave the source
+untouched and report the specific blocker; continue work independent of that write.
+Do not repeatedly archive the unchanged old body merely to meet a size target.
+
 Finish by checking the relevant current source/spec references, unresolved items,
 active approvals, old rules and the requested product behavior. Record the migrated
-revision and evidence in the current state, preserving history without appending
-unbounded follow-up logs. Do not update installed caches or unrelated repositories
+revision and evidence by replacing the current section at handoff, completion, review
+or return. Keep dated reports and full verification output in existing progress,
+feedback or reports, with only necessary links in state. Do not update installed caches or unrelated repositories
 unless authorized separately.

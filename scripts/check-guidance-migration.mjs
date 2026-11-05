@@ -134,22 +134,91 @@ try {
       assert.deepEqual(snapshot(root), before);
     }
   });
-  check("custom canonical state can shrink while linking a stable original archive", () => {
+  check("10k-line state keeps late active values and exact archive through preview/apply", () => {
     const root = fixture("custom-state");
-    const old = "# Current state\n## Unresolved\n- [ ] Owner decision remains.\n## History\n" + "Old event.\n".repeat(2000);
+    const active = [
+      "- Authorization: local implementation and tests only.",
+      "- Constraints: do not deploy or upload customer data.",
+      "- Unresolved: production validation is pending separate authorization.",
+      "- Retry Count: 1", "- Spec-Issue Count: 1", "- Lineage Dispatches: 4",
+      "- Model Tier: standard", "- Rotate: none",
+      "- Return: finish repair B, then resume A regression checks.",
+    ];
+    const lines = Array(10000).fill("Old synthetic event.");
+    lines[0] = "# Old state";
+    lines[4544] = "- Current ID: sprint-001";
+    lines[4779] = "- Current ID: sprint-002";
+    lines.splice(9500, active.length, ...active);
+    const old = lines.join("\n") + "\n";
     write(root, "planning/current.md", old);
-    const content = "# Current state\n## Unresolved\n- [ ] Owner decision remains.\n## History\n[Previous detail](../.harness/migrations/state-maintenance-01/originals/planning/current.md)\n";
-    const file = plan(root, [{ path: "planning/current.md", content }]);
+    write(root, "planning/spec.md", "# A\nFinish local regression before requesting production approval.\n");
+    write(root, "planning/evidence.md", "# Synthetic evidence\nLocal repair check passed on fixture-v1; production unverified.\n");
+    // A reviewed candidate is authored by the Agent; the CLI must not infer it from old IDs.
+    const content = ["# State", "", "## 現在地", "",
+      "- Purpose: complete feature A; completion requires local regression and authorized production validation.",
+      "- Current ID: sprint-003", "- Status: active", ...active,
+      "- Work: repair B. Exit: local repair check passes. Next action: run A local regression.",
+      "- Implemented: B; Verified: B local check; Deployed: none.",
+      "- Specification: [A](spec.md); target fixture-v1, [evidence](evidence.md).", "",
+      "## 旧状態（履歴・現行値は先頭の現在地へ移管済み）",
+      "[Previous detail](../.harness/migrations/state-maintenance-01/originals/planning/current.md)", ""].join("\n");
+    const file = plan(root, [{ path: "planning/current.md", content, preserve: active }]);
     const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
     manifest.id = "state-maintenance-01";
     fs.writeFileSync(file, JSON.stringify(manifest));
+    const before = snapshot(root);
     let result = command(root, ["upgrade", "--plan", file]);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(fs.existsSync(path.join(root, ".harness")), false);
+    assert.deepEqual(snapshot(root), before);
     result = command(root, ["upgrade", "--plan", file, "--apply"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(fs.readFileSync(path.join(root, ".harness/migrations/state-maintenance-01/originals/planning/current.md"), "utf8"), old);
-    assert.equal(fs.readFileSync(path.join(root, "planning/current.md"), "utf8"), content);
+    const actual = fs.readFileSync(path.join(root, "planning/current.md"), "utf8");
+    assert.equal(actual, content);
+    for (const value of active) assert.ok(actual.includes(value));
+    assert.equal((actual.match(/Current ID:/gu) ?? []).length, 1);
+    assert.ok(!actual.includes("sprint-001") && !actual.includes("sprint-002"));
+    console.log(`  synthetic state: ${lines.length} lines / ${Buffer.byteLength(old)} bytes -> ${actual.split("\n").length - 1} lines / ${Buffer.byteLength(actual)} bytes`);
+  });
+  check("protection refusal preserves the body; fallback and repeated handoffs replace one current section", () => {
+    const root = fixture("state-fallback");
+    const old = "# Old state\n- Current ID: sprint-001\n## Pending\n- [ ] Legacy release approval is unresolved.\n## History\n- Current ID: sprint-002\n";
+    write(root, "docs/state.md", old);
+    const current = "# State\n\n## 現在地\n\n- Purpose: finish A local checks.\n- Current ID: sprint-003\n- Retry Count: 1\n- Spec-Issue Count: 1\n- Lineage Dispatches: 4\n- Authorization: local repair and tests only; no release approval.\n- Unresolved: release is held.\n- 整理未完了: protected pending item; separate maintenance must reconcile it.\n";
+    const phases = [
+      "- Work: B repair implemented; next: B tests; return: A local checks after B passes.\n",
+      "- Work: B tests passed; next: independent B review; return: A local checks after review.\n",
+      "- Work: B review passed; next: resume A local checks; production remains unverified.\n",
+    ];
+    const rejected = plan(root, [{ path: "docs/state.md", content: current + phases[0] }]);
+    const before = snapshot(root);
+    const refusal = command(root, ["upgrade", "--plan", rejected, "--apply"]);
+    assert.equal(refusal.status, 2);
+    assert.match(refusal.stderr, /protected text missing/);
+    assert.deepEqual(snapshot(root), before);
+    const history = "\n## 旧状態（履歴・現行値は先頭の現在地へ移管済み）\n\n" + old;
+    const fallback = plan(root, [{ path: "docs/state.md", content: current + phases[0] + history }]);
+    assert.equal(command(root, ["upgrade", "--plan", fallback]).status, 0);
+    assert.deepEqual(snapshot(root), before);
+    const result = command(root, ["upgrade", "--plan", fallback, "--apply"]);
+    assert.equal(result.status, 0, result.stderr);
+    const archives = fs.readdirSync(path.join(root, ".harness/migrations"));
+    assert.equal(archives.length, 1);
+    assert.equal(fs.readFileSync(path.join(root, ".harness/migrations", archives[0], "originals/docs/state.md"), "utf8"), old);
+    // Subsequent ordinary handoffs replace current values, not another migration/daily log.
+    for (const phase of phases) {
+      const previous = fs.readFileSync(path.join(root, "docs/state.md"), "utf8");
+      const retained = previous.slice(previous.indexOf("\n## 旧状態"));
+      write(root, "docs/state.md", current + phase + retained);
+      const actual = fs.readFileSync(path.join(root, "docs/state.md"), "utf8");
+      assert.equal(actual, current + phase + history);
+      assert.equal((actual.match(/^## 現在地$/gmu) ?? []).length, 1);
+      const live = actual.slice(0, actual.indexOf("\n## 旧状態"));
+      assert.equal((live.match(/Current ID:/gu) ?? []).length, 1);
+      assert.ok(live.includes("sprint-003") && live.includes("整理未完了"));
+      assert.equal(actual.slice(actual.indexOf("# Old state")), old);
+    }
+    assert.deepEqual(fs.readdirSync(path.join(root, ".harness/migrations")), archives);
   });
   check("configuration, Agent definitions, traversal and backup symlinks are refused", () => {
     const root = fixture("unsafe");
