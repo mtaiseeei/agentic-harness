@@ -31,6 +31,9 @@ try {
     assert.ok(fs.existsSync(path.join(root, "docs/sprints/state.md")));
     for (const name of ["product", "features", "constraints", "domain", "ui", "rubric"]) assert.equal(fs.existsSync(path.join(root, `docs/spec/${name}.md`)), false);
     assert.equal(fs.existsSync(path.join(root, "CONTEXT.md")), false);
+    for (const name of ["AGENTS.md", "CLAUDE.md"]) {
+      assert.equal(fs.readFileSync(path.join(root, name), "utf8"), fs.readFileSync(path.join(repo, "plugins/harness/templates", name), "utf8"));
+    }
     const before = snapshot(root);
     result = command(root, ["init"]);
     assert.equal(result.status, 0, result.stderr);
@@ -113,6 +116,55 @@ try {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /Already applied/);
     assert.deepEqual(snapshot(root), after);
+  });
+  check("both host guidance migrations preserve approvals, dirty bytes and old global until a separate fallback plan", () => {
+    const root = fixture("host-guidance");
+    spawnSync("git", ["init", "-q", root]);
+    const owner = "Owner rule: never upload customer data.\nAuthorization: local implementation and tests only.\n";
+    const obsolete = ["Fix every product finding.", "Deferred findings still fail the review.", "Append every progress report to state."];
+    const global = "<!-- review-convergence:v1 -->\nSynthetic existing global rule: F*I >= 20 or F >= 1 and I >= 8.\nPreserve mandatory exceptions and do not repeat unchanged deferred findings.\n<!-- /review-convergence:v1 -->\n";
+    const old = owner + "\n## Harness\n" + obsolete.join("\n") + "\n\n" + global;
+    for (const name of ["AGENTS.md", "CLAUDE.md"]) write(root, name, old);
+    write(root, "owner.txt", "unrelated dirty owner content\n");
+    const original = snapshot(root);
+    const initialized = command(root, ["init"]);
+    assert.equal(initialized.status, 0, initialized.stderr);
+    for (const name of ["AGENTS.md", "CLAUDE.md", "owner.txt"]) assert.equal(snapshot(root)[name], original[name]);
+    const supplement = fs.readFileSync(path.join(root, "docs/harness-guidance.md"), "utf8");
+    assert.equal(supplement, fs.readFileSync(path.join(repo, "plugins/harness/templates/docs/harness-guidance.md"), "utf8"));
+    const pointer = supplement.match(/```markdown\n([\s\S]*?)```/)[1];
+    const names = ["AGENTS.md", "CLAUDE.md"];
+    const next = owner + "\n" + pointer + "\n" + global;
+    const file = plan(root, names.map((name) => ({ path: name, content: next, preserve: [owner, global], retire: obsolete })));
+    const before = snapshot(root);
+    assert.equal(command(root, ["upgrade"]).status, 0);
+    let result = command(root, ["upgrade", "--plan", file]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshot(root), before);
+    result = command(root, ["upgrade", "--plan", file, "--apply"]);
+    assert.equal(result.status, 0, result.stderr);
+    const archives = fs.readdirSync(path.join(root, ".harness/migrations"));
+    for (const name of names) {
+      assert.equal(fs.readFileSync(path.join(root, name), "utf8"), next);
+      assert.equal(fs.readFileSync(path.join(root, ".harness/migrations", archives[0], "originals", name), "utf8"), old);
+    }
+    for (const name of ["owner.txt", ".harness/config.toml", "docs/harness-guidance.md"]) assert.equal(snapshot(root)[name], before[name]);
+    // Synthetic, separately reviewed second plan. A real global edit still requires actual
+    // rule reading/reconciliation and its own authorization; this CLI test cannot prove either.
+    const migration = fs.readFileSync(path.join(repo, "plugins/harness/skills/harness-loop/references/migration.md"), "utf8");
+    const fallback = migration.match(/```markdown\n(<!-- review-convergence:v1 -->[\s\S]*?)```/)[1];
+    assert.ok(fallback.trimEnd().split("\n").length <= 10);
+    const compact = next.replace(global, fallback);
+    const separate = plan(root, names.map((name) => ({ path: name, content: compact, preserve: [owner, pointer], retire: [global.trimEnd()] })));
+    const beforeFallback = snapshot(root);
+    result = command(root, ["upgrade", "--plan", separate]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(snapshot(root), beforeFallback);
+    result = command(root, ["upgrade", "--plan", separate, "--apply"]);
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of names) assert.equal(fs.readFileSync(path.join(root, name), "utf8"), compact);
+    assert.equal(snapshot(root)["owner.txt"], before["owner.txt"]);
+    assert.equal(command(root, ["check"]).status, 0);
   });
   check("stale plans, broken links, unresolved loss and old-rule retention fail before mutation", () => {
     const root = fixture("rejections");

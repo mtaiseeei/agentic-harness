@@ -86,8 +86,13 @@ claude plugin list --json
 Codexでローカルcheckoutをmarketplaceとして登録している場合、`marketplace upgrade`はそのcheckoutを
 更新しません。登録元checkoutの既存変更を保持して対象releaseを取り込み、その後`plugin add`します。
 cache内のファイルを直接編集せず、設定、導入scope、既存repoのdirtyを維持してください。
-更新後は対象pluginのinstalled versionが`0.6.0`であることを確認し、新しいセッションで利用します。
+このcheckoutの次patch候補は **v0.6.1** です。公開前の候補であり、上記コマンドが候補を取得できるとは限りません。
+対象版の公開後、更新したpluginのinstalled versionが`0.6.1`であることを確認します。
+新しいセッションで入口と評価/state正本の実path・内容を読み、読み込み中の作業・承認を引き継ぎます。
 既存repoへの一括guidance書換えやruntime/model設定の変更はplugin更新に含みません。
+
+source公開、installed更新、fresh sessionの実読込、消費repo文書への適用は別々に確認します。
+[候補の変更内容と適用範囲](docs/releases/v0.6.1.md)に従い、source更新だけで導入完了とは扱いません。
 
 ## 使い方
 
@@ -121,7 +126,8 @@ node /path/to/harness-plugin/scripts/harness.mjs upgrade --root /path/to/repo
 plugin更新だけでは古いrepo指示は変わりません。`upgrade` は文書保守のpreviewから開始し、
 対象差分、独自規則、dirty、未解決事項を確認して、承認済み範囲の候補だけを適用できます。
 元の内容は保管し、古いpreviewからの上書きや参照切れを検査します。
-[候補作成・適用手順](plugins/harness/skills/harness-loop/references/migration.md)を必要なときだけ使ってください。
+候補作成・適用時は[移行手順と旧規則の合成例](plugins/harness/skills/harness-loop/references/migration.md)を読みます。
+旧globalブロックは対象repoで新規則の実読込と整合を確認するまで残し、その後も非Harness用の短いfallbackを保持します。
 初期化・導入確認だけでは開発を開始せず、更新時に消費repoを自動移行しません。
 対象repoへの依存installは不要。初期化の安全確認とNode writerはmacOS/Linux/Windowsで共通です。
 
