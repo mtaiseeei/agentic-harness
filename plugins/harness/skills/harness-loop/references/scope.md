@@ -43,7 +43,8 @@
 検証は製品を出荷するための手段であり、検証基盤の完成度自体は製品要件ではない。
 次のガードで「検証のための検証」への逸脱を検知し、ループではなくユーザーへ返す。
 
-- **finding の対象区分**: 各findingは `product` / `verification-infra` に分け、不明なら `product` とする。検証基盤だけの軽微な指摘は改善提案に残せるが、必要な回帰が実行不能・失敗のまま「回帰なし」をPASSにしない。
+- **finding の対象区分**: 各findingは `product` / `verification-infra` に分け、不明なら `product` とする。
+  修正・見送りは先に[評価正本](evaluation.md)で選別する。見送りを分類替えで差し戻さず、必須検証の未実行は仮説と区別してPASSにしない。
 - **限定修理**: 既存テストのパス・fixture・起動設定など局所的な破損は、期待結果・合否条件・証拠要件を変えず、新規基盤を増やさずに直せるならオーケストレーターが根拠を記録してGeneratorへ戻せる。対象区分は `verification-infra` のまま、分類は `verification-scope-issue` として限定修理可能であることを記録し、製品の欠陥に偽装しない。Evaluatorは修理せず独立再評価する。限定修理は同一Sprintで1回まで自動で試し、再失敗・修理範囲不明・要求拡大ならユーザーへ選択肢を返す。Retry CountとSpec-Issue Countは消費せず、Lineage Dispatchesと検証のみdiffのガードは通常どおり適用する。
   resolverは既存入力だけを使う: `--event retry`、`--failure-kind`は省略、`--retry-count`は据え置き、`--current-model-tier`はstateの値。`verification-scope-issue`分類はfeedback/stateに残し、resolverへ未対応の分類を渡さない。
 - **検証要求の判断が必要な場合**: 新しい証拠形式・新規collector、期待結果や検証範囲の変更、原因不明や限定修理で解消しない問題は自動修理せず `verification-scope-issue` としてユーザーへ返す。
@@ -67,6 +68,8 @@
 ### Step 4: 遷移（オーケストレーターが state.md を更新）
 
 feedback の判定に応じて、オーケストレーターが必ず state.md を更新してから次へ進む。
+不合格遷移の前に評価正本の選別を確認し、FAILを未達条件または修正対象findingへ対応させる。
+見送りの減点・仮説の未確認化・分類替えだけでは不合格遷移を開始しない。
 
 - **合格** → Status を `done`、Retry CountとSpec-Issue Countを0にし、`Current ID`を次のスプリントへ進める。
   次Sprintがある場合は、`Model Tier`を最後に実dispatchした値のまま保持し、`Rotate: none`としてStep 2へ進む。
@@ -84,7 +87,7 @@ feedback の判定に応じて、オーケストレーターが必ず state.md �
   目的・挙動・受け入れ基準・閾値・証拠要件が実質的に変わる場合はユーザーへ差分を確認する。意味不変か不明なら確認する。
   同一スプリントで Spec-Issue Count が `limits.max_spec_issue_returns`（既定 2）に達したら、
   Planner との往復を続けずユーザーへ状況と選択肢を報告する。
-- **不合格（verification-scope-issue）** → 上の限定修理条件をすべて満たし、まだ試していなければ同じSprintのGeneratorへ1回だけ戻す。それ以外はRetry CountとSpec-Issue Countを消費せず、(a) 修正 (b) 証拠水準を下げて受理 (c) Non-scope化 の影響を示し、ユーザーへ判断を返す。未確認項目をPASSにはしない。
+- **不合格（verification-scope-issue）** → 上の限定修理条件をすべて満たし、まだ試していなければ同じSprintのGeneratorへ1回だけ戻す。それ以外はRetry CountとSpec-Issue Countを消費せず、(a) 修正 (b) 証拠水準を下げて受理 (c) Non-scope化 の影響を示し、ユーザーへ判断を返す。未確認の必須項目をPASSにはしない。
 - **ユーザー判断による完了（accept-as-is）** → ユーザーが残余リスクを明示的に引き受けて完了を選んだ場合、
   Evaluator の評価結果（未達項目を含む）を feedback に保持したまま、Status を `done-by-user-decision` にし、
   理由と未達項目への参照を state.md に記録して次へ進む。Evaluator の記録は書き換えない。
