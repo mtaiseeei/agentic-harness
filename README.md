@@ -86,13 +86,13 @@ claude plugin list --json
 Codexでローカルcheckoutをmarketplaceとして登録している場合、`marketplace upgrade`はそのcheckoutを
 更新しません。登録元checkoutの既存変更を保持して対象releaseを取り込み、その後`plugin add`します。
 cache内のファイルを直接編集せず、設定、導入scope、既存repoのdirtyを維持してください。
-このcheckoutの次patch候補は **v0.6.1** です。公開前の候補であり、上記コマンドが候補を取得できるとは限りません。
-対象版の公開後、更新したpluginのinstalled versionが`0.6.1`であることを確認します。
+対象版は **v0.6.2** です。
+対象版の公開後、更新したpluginのinstalled versionが`0.6.2`であることを確認します。
 新しいセッションで入口と評価/state正本の実path・内容を読み、読み込み中の作業・承認を引き継ぎます。
 既存repoへの一括guidance書換えやruntime/model設定の変更はplugin更新に含みません。
 
 source公開、installed更新、fresh sessionの実読込、消費repo文書への適用は別々に確認します。
-[候補の変更内容と適用範囲](docs/releases/v0.6.1.md)に従い、source更新だけで導入完了とは扱いません。
+[変更内容と適用範囲](docs/releases/v0.6.2.md)に従い、source更新だけで導入完了とは扱いません。
 
 ## 使い方
 
